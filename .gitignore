@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.work/
+assets-src/
+server/voices/
+*.blend1
+.env
+.env.local

@@ -1,0 +1,33 @@
+{
+  "name": "3d-avatar-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Realistic, lip-synced 3D virtual-assistant avatar (Three.js + open-source Kokoro TTS).",
+  "type": "module",
+  "scripts": {
+    "setup": "node tools/fetch-assets.mjs && npm run build-avatar && node tools/fetch-voices.mjs",
+    "fetch-assets": "node tools/fetch-assets.mjs",
+    "fetch-voices": "node tools/fetch-voices.mjs",
+    "build-avatar": "blender -b --factory-startup -noaudio --python tools/blender/build_avatar.py -- --src assets-src/rocketbox --out assets-src/avatar.raw.glb && gltfpack -i assets-src/avatar.raw.glb -o public/avatar/avatar.glb -cc -kn -km -ke -vp 16 -vn 10 -af 30 && cp assets-src/rocketbox/LICENSE.md public/avatar/LICENSE-rocketbox.md",
+    "tts": "node server/tts-server.mjs",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "gltfpack": "^1.3.0",
+    "playwright": "^1.65.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "@met4citizen/headaudio": "^1.0.0",
+    "@met4citizen/headtts": "^1.3.0",
+    "three": "^0.187.0"
+  }
+}

@@ -1,0 +1,20 @@
+# systemd user unit (installed by deploy/install.sh; @...@ placeholders are filled in there).
+[Unit]
+Description=3D Avatar Assistant - Caddy web server for 3d-avatar.novaeuropa.space
+After=3d-avatar-tts.service
+
+[Service]
+Type=notify
+WorkingDirectory=@PROJECT_DIR@/deploy/caddy
+Environment=SITE_ROOT=@DATA_DIR@/current
+Environment=LOG_DIR=@STATE_DIR@
+ExecStart=@CADDY@ run --config Caddyfile --adapter caddyfile
+ExecReload=@CADDY@ reload --config Caddyfile --adapter caddyfile --force
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=5s
+LimitNOFILE=65536
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

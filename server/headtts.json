@@ -1,0 +1,23 @@
+{
+  "server": {
+    "port": 8882,
+    "websocket": true,
+    "rest": true,
+    "connectionTimeout": 60000,
+    "corsOrigin": "*"
+  },
+  "tts": {
+    "threads": 2,
+    "model": "onnx-community/Kokoro-82M-v1.0-ONNX-timestamped",
+    "dtype": "fp32",
+    "device": "cpu",
+    "languages": ["en-us"],
+    "dictionaryPath": "node_modules/@met4citizen/headtts/dictionaries",
+    "voicePath": "server/voices",
+    "voices": ["af_heart"],
+    "deltaStart": -10,
+    "deltaEnd": 10,
+    "defaults": { "voice": "af_heart", "language": "en-us", "speed": 1, "audioEncoding": "wav" }
+  },
+  "trace": 0
+}

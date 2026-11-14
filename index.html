@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Avatar Assistant</title>
+    <link rel="stylesheet" href="/src/ui/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="viewport"></div>
+      <div id="hud">
+        <span id="state-chip" class="chip">idle</span>
+        <span id="tts-chip" class="chip muted">TTS: checking…</span>
+      </div>
+      <div id="subtitle" aria-live="polite"></div>
+      <div id="loading"><div>Loading avatar…</div><progress id="load-progress" max="1" value="0"></progress></div>
+      <div id="toast" role="alert"></div>
+
+      <aside id="panel">
+        <button id="panel-toggle" class="icon" title="Hide/show controls">☰</button>
+        <section>
+          <h2>Talk</h2>
+          <div class="seg" role="radiogroup">
+            <label><input type="radio" name="mode" value="say" checked /> Say this</label>
+            <label id="ask-label"><input type="radio" name="mode" value="ask" /> Ask assistant</label>
+          </div>
+          <textarea id="text" rows="3">Hello! I'm your virtual assistant. How can I help you today?</textarea>
+          <select id="samples">
+            <option value="">Sample lines…</option>
+            <option>Hello! I'm your virtual assistant. How can I help you today?</option>
+            <option>Peter Piper picked a peck of pickled peppers. Five fresh fish, very fine food!</option>
+            <option>[happy] Great news! Your order has shipped, and it should arrive on 2026-11-18.</option>
+            <option>[concerned] I'm sorry to hear that. Let's fix it together, one step at a time.</option>
+            <option>[surprised] Wow, really? That's amazing! Tell me more.</option>
+            <option>[thinking] Hmm, let me think about that for a moment. [smile] Okay, I have an idea.</option>
+            <option>Your appointment with Dr. Smith is on Tuesday at 3:45 PM. The visit costs $40, and the clinic is about 2 km away.</option>
+            <option>The quick brown fox jumps over the lazy dog. Would you like me to read the next chapter, or should we take a short break?</option>
+          </select>
+          <div class="row">
+            <button id="speak" class="primary">Speak</button>
+            <button id="stop">Stop</button>
+          </div>
+        </section>
+        <section>
+          <h2>Voice</h2>
+          <label>Voice <select id="voice"></select></label>
+          <label>Speed <input id="speed" type="range" min="0.75" max="1.3" step="0.05" value="1" /><output id="speed-v">1.00</output></label>
+          <label>Articulation <input id="articulation" type="range" min="0.6" max="1.3" step="0.05" value="1" /><output id="art-v">1.00</output></label>
+        </section>
+        <section>
+          <h2>Mood</h2>
+          <div id="moods" class="chips"></div>
+          <label>Intensity <input id="expr-int" type="range" min="0" max="1.5" step="0.05" value="1" /></label>
+        </section>
+        <section>
+          <h2>Behaviour</h2>
+          <div class="chips" id="states">
+            <button data-state="idle">Idle</button>
+            <button data-state="listening">Listening</button>
+            <button data-state="thinking">Thinking</button>
+          </div>
+          <label>Gestures <select id="gestures"><option value="full">Full</option><option value="subtle">Subtle</option><option value="none">None</option></select></label>
+          <label>Camera <select id="framing"><option value="portrait">Portrait</option><option value="upper">Upper body</option></select></label>
+        </section>
+        <section>
+          <h2>Audio</h2>
+          <label class="file">Lip-sync an audio file <input id="audio-file" type="file" accept="audio/*" /></label>
+          <label><input id="mic" type="checkbox" /> React while I talk (microphone)</label>
+          <label><input id="barge" type="checkbox" /> Interrupt her when I talk</label>
+        </section>
+        <section>
+          <h2><label><input id="debug" type="checkbox" /> Lip-sync debug</label></h2>
+          <div id="debug-bars" hidden></div>
+        </section>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

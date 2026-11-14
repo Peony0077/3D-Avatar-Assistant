@@ -1,0 +1,67 @@
+# Site handlers, imported by Caddyfile (kept separate so the same rules can be tested locally).
+# Static frontend from SITE_ROOT, plus the two backend endpoints the browser actually calls.
+
+log {
+	output file {$LOG_DIR}/access.log {
+		roll_size 10MiB
+		roll_keep 5
+	}
+}
+
+# LLM replies are streamed sentence by sentence; don't let compression buffer them.
+@compressible not path /llm/*
+encode @compressible zstd gzip
+
+header {
+	Strict-Transport-Security "max-age=31536000"
+	X-Content-Type-Options "nosniff"
+	Referrer-Policy "strict-origin-when-cross-origin"
+	Cross-Origin-Opener-Policy "same-origin"
+	Permissions-Policy "microphone=(self), camera=(), geolocation=(), payment=(), usb=()"
+	# wasm-unsafe-eval: meshopt decoder (WebAssembly). blob:/data:: glTF textures and audio buffers.
+	Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' data: blob:; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	-Server
+}
+
+# Text-to-speech (HeadTTS/Kokoro on loopback): only the synthesize endpoint, small JSON bodies.
+@tts {
+	path /tts/v1/synthesize
+	method POST OPTIONS
+}
+handle @tts {
+	request_body {
+		max_size 16KB
+	}
+	uri strip_prefix /tts
+	reverse_proxy {$TTS_UPSTREAM:127.0.0.1:8882}
+}
+
+# Optional assistant replies from an OpenAI-compatible server (e.g. Ollama). Only chat completions
+# is exposed: never publish model management endpoints such as /api/pull or /api/delete.
+@llm {
+	path /llm/v1/chat/completions
+	method POST
+}
+handle @llm {
+	request_body {
+		max_size 64KB
+	}
+	uri strip_prefix /llm
+	reverse_proxy {$LLM_UPSTREAM:127.0.0.1:11434} {
+		# Ollama only trusts local Host/Origin values.
+		header_up Host {upstream_hostport}
+		header_up -Origin
+		flush_interval -1
+	}
+}
+
+# Everything else: the built frontend. Hashed files under /assets never change; the rest
+# (index.html, avatar.glb) is revalidated with ETags so a new release shows up immediately.
+handle {
+	root * {$SITE_ROOT}
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	@unhashed not path /assets/*
+	header @unhashed Cache-Control "no-cache"
+	file_server
+}

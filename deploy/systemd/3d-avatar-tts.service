@@ -1,0 +1,15 @@
+# systemd user unit (installed by deploy/install.sh; @...@ placeholders are filled in there).
+[Unit]
+Description=3D Avatar Assistant - HeadTTS/Kokoro speech server (127.0.0.1:8882)
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_DIR@
+Environment=TTS_HOST=127.0.0.1
+ExecStart=@NODE@ server/tts-server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target
