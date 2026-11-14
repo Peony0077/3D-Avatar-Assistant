@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>3D Avatar Assistant</title>
     <link rel="stylesheet" href="/src/ui/styles.css" />
   </head>
@@ -17,9 +17,11 @@
       <div id="loading"><div>Loading avatar…</div><progress id="load-progress" max="1" value="0"></progress></div>
       <div id="toast" role="alert"></div>
 
-      <aside id="panel">
-        <button id="panel-toggle" class="icon" title="Hide/show controls">☰</button>
-        <section>
+      <aside id="panel" data-sheet="compact">
+        <button id="panel-toggle" class="icon" title="Hide/show controls" aria-label="Hide or show controls">☰</button>
+        <button id="sheet-handle" type="button" aria-label="Show all settings" aria-expanded="false"><span class="grabber"></span><span id="sheet-label">Settings</span></button>
+        <div id="panel-body">
+        <section id="talk">
           <h2>Talk</h2>
           <div class="seg" role="radiogroup">
             <label><input type="radio" name="mode" value="say" checked /> Say this</label>
@@ -42,6 +44,7 @@
             <button id="stop">Stop</button>
           </div>
         </section>
+        <div id="settings">
         <section>
           <h2>Voice</h2>
           <label>Voice <select id="voice"></select></label>
@@ -61,7 +64,7 @@
             <button data-state="thinking">Thinking</button>
           </div>
           <label>Gestures <select id="gestures"><option value="full">Full</option><option value="subtle">Subtle</option><option value="none">None</option></select></label>
-          <label>Camera <select id="framing"><option value="portrait">Portrait</option><option value="upper">Upper body</option></select></label>
+          <label>Camera <select id="framing"><option value="upper" selected>Upper body + hands</option><option value="portrait">Close-up (face)</option></select></label>
         </section>
         <section>
           <h2>Audio</h2>
@@ -73,6 +76,8 @@
           <h2><label><input id="debug" type="checkbox" /> Lip-sync debug</label></h2>
           <div id="debug-bars" hidden></div>
         </section>
+        </div>
+        </div>
       </aside>
     </div>
     <script type="module" src="/src/main.ts"></script>

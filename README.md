@@ -18,10 +18,18 @@ neural voice (Kokoro via HeadTTS). Everything is free and open source; see [Lice
     body moves.
   - **Face:** eyebrow raises on stressed words, mood expressions, and small idle movements.
   - **Body:** breathing and talking or listening motion capture. Every clip shares one calm posture,
-    and torso sway is reduced so she stays facing the viewer; arm gestures are kept.
+    and torso sway is reduced so she stays facing the viewer; arm gestures are kept. Cross-fades
+    between clips always blend to exactly 100%, so the body never pops toward the bind pose.
 - **Responsive**:
   - **Pipelined speech:** the next sentence is synthesised while the current one plays, and replies from a
-    streaming LLM start speaking at their first sentence.
+    streaming LLM start speaking at their first sentence. At most two sentences are at the TTS server at
+    once (one after the server first says it is busy), and busy answers (HTTP 429/502/503/504) are
+    retried with backoff, so a rate-limited server works too. If the next sentence is late, she pauses
+    in her speaking pose rather than switching state.
+  - **Layout:** on desktop the controls are a side panel; on phones they are a bottom sheet (drag or
+    tap the handle: text box + Speak/Stop, all settings, or handle only) that rides above the
+    on-screen keyboard. She is always framed in the space the controls leave free, and the camera
+    glides when that space changes.
   - **Interruption:** Stop (or the user talking, if barge-in is on) cuts speech within about 150 ms.
   - **States:** idle, listening, thinking and speaking.
 - **Audio-driven fallback**: lip-syncs any audio file without timings (HeadAudio), for example
@@ -66,6 +74,8 @@ avatar.stop();                                                      // interrupt
 avatar.setState("listening");                                       // idle | listening | thinking
 avatar.setMood("concerned");                                        // neutral smile happy sad surprised concerned thinking angry
 avatar.voice = { voice: "af_heart", speed: 1 };                     // 8 female voices, see TTSClient.VOICES
+avatar.setFraming("upper");                                         // upper: mid-thigh up, hands always in view (default) | portrait: face close-up
+avatar.setViewInsets({ top: 0, right: 340, bottom: 100, left: 0 }); // px covered by your UI; she is framed in the rest
 await avatar.playAudio(arrayBuffer);                                // audio-driven lip sync for any audio
 avatar.listeners.subtitle = (text, wordIndex, words) => { /* ... */ };
 ```
@@ -104,7 +114,7 @@ text ─► split into sentences ─► spoken-form normalisation ─► HeadTTS
 ## Verification
 
 ```bash
-npm test                                   # 23 unit tests (lip-sync engine on real TTS output, text rules)
+npm test                                   # 32 unit tests (lip-sync engine on real TTS output, text rules, TTS retry and pipelining)
 node tools/smoke-test.mjs                  # headless Chromium: load, speak, subtitles, stop, audio-file lip sync
 node tools/capture-video.mjs --text "…" --out demo.mp4   # frame-exact video of the real runtime + soundtrack
 <blender-python> tools/analyze-sync.py .work/capture-frames   # mouth vs audio offset, closures (needs numpy)

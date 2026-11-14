@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SentenceStream, normalizeForSpeech, numberWords, ordinalWords, parseMarkup, splitSentences } from "../src/speech/text";
+import { SentenceStream, normalizeForSpeech, numberWords, ordinalWords, parseMarkup, phraseAround, splitSentences } from "../src/speech/text";
 
 describe("splitSentences", () => {
   it("splits on sentence punctuation but not abbreviations or decimals", () => {
@@ -68,5 +68,25 @@ describe("number words", () => {
     expect(ordinalWords(21)).toBe("twenty-first");
     expect(ordinalWords(30)).toBe("thirtieth");
     expect(ordinalWords(12)).toBe("twelfth");
+  });
+});
+
+describe("subtitle phrases", () => {
+  const words = "Your package left the warehouse this morning, and it should arrive on Thursday afternoon.".split(" ");
+  it("shows the phrase around the current word, breaking after commas", () => {
+    expect(phraseAround(words, -1, 7)).toEqual([0, 7]); // "... morning,"
+    expect(phraseAround(words, 6, 7)).toEqual([0, 7]);
+    expect(phraseAround(words, 7, 7)).toEqual([7, 14]);
+  });
+  it("keeps every phrase within the limit and covers all words", () => {
+    let covered = 0;
+    for (let i = 0; i < words.length; i++) {
+      const [a, b] = phraseAround(words, i, 5);
+      expect(b - a).toBeLessThanOrEqual(5);
+      expect(i).toBeGreaterThanOrEqual(a);
+      expect(i).toBeLessThan(b);
+      covered = Math.max(covered, b);
+    }
+    expect(covered).toBe(words.length);
   });
 });

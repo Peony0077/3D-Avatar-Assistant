@@ -1,7 +1,28 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { damp } from "../util/math";
 
 export type Framing = "portrait" | "upper";
+
+/** Screen area (CSS px from each edge) covered by UI, which the avatar is framed around. */
+export interface Insets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/**
+ * What each framing keeps in view, in metres relative to the eyes, plus the camera height (also
+ * relative to the eyes; the camera looks level, so she looks straight at the viewer).
+ */
+const SHOTS: Record<Framing, { top: number; bottom: number; halfWidth: number; camY: number; shadow: [number, number, number] }> = {
+  // head and shoulders: close-up for lip reading
+  portrait: { top: 0.21, bottom: -0.35, halfWidth: 0.22, camY: -0.03, shadow: [0.5, 0.5, -0.5] },
+  // mid-thigh up: every gesture and the hands at rest. Measured over all body clips: fingertips
+  // reach 0.9 m below the eyes at rest and 0.5 m to the side (a little more when moved toward the camera).
+  upper: { top: 0.2, bottom: -0.98, halfWidth: 0.57, camY: -0.02, shadow: [0.72, 0.45, -0.95] },
+};
 
 function backdropTexture(): THREE.Texture {
   const c = document.createElement("canvas");
@@ -25,8 +46,16 @@ export class Stage {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(28, 1, 0.05, 50);
   readonly key: THREE.DirectionalLight;
-  framing: Framing = "portrait";
+  framing: Framing = "upper";
   private focus = new THREE.Vector3(0, 1.6, 0);
+  private insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  private size = { width: 1, height: 1 };
+  private sized = false;
+  /** Camera placement now (view) and what the framing asks for (viewTarget); see update(). */
+  private view = { dist: 3, offX: 0, offY: 0, camY: 1.6 };
+  private viewTarget = { dist: 3, offX: 0, offY: 0, camY: 1.6 };
+  private settled = false;
+  private readonly smooth: boolean;
   private readonly fixedSize?: { width: number; height: number };
 
   constructor(private container: HTMLElement, opts: { capture?: boolean; width?: number; height?: number } = {}) {
@@ -43,6 +72,7 @@ export class Stage {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(this.renderer.domElement);
     if (opts.width && opts.height) this.fixedSize = { width: opts.width, height: opts.height };
+    this.smooth = !opts.capture; // capture renders must be exactly reproducible
 
     this.scene.background = backdropTexture();
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -52,9 +82,7 @@ export class Stage {
     this.key = new THREE.DirectionalLight(0xfff0e4, 2.3);
     this.key.castShadow = true;
     this.key.shadow.mapSize.set(2048, 2048);
-    const sc = this.key.shadow.camera;
-    sc.left = sc.bottom = -0.5;
-    sc.right = sc.top = 0.5;
+    const sc = this.key.shadow.camera; // extents are set per framing in updateCamera()
     sc.near = 0.1;
     sc.far = 8;
     this.key.shadow.bias = -0.0004;
@@ -90,22 +118,84 @@ export class Stage {
     this.updateCamera();
   }
 
+  /** Keep the avatar inside the part of the screen that the UI (panel, subtitles) leaves free. */
+  setInsets(insets: Insets) {
+    const i = this.insets;
+    if (i.top === insets.top && i.right === insets.right && i.bottom === insets.bottom && i.left === insets.left) return;
+    this.insets = { ...insets };
+    this.updateCamera();
+  }
+
   private updateCamera() {
     const f = this.focus;
-    // visible height / width to fit, and where the frame is centred relative to the eyes
-    const [h, w, drop] = this.framing === "portrait" ? [0.56, 0.44, 0.07] : [1.0, 0.8, 0.33];
-    const vfov = THREE.MathUtils.degToRad(this.camera.fov);
-    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
-    const dist = Math.max(h / 2 / Math.tan(vfov / 2), w / 2 / Math.tan(hfov / 2));
-    const center = new THREE.Vector3(f.x, f.y - drop, f.z);
-    this.camera.position.set(center.x, center.y + 0.04, center.z + dist);
-    this.camera.lookAt(center);
+    const s = SHOTS[this.framing];
+    const { width: W, height: H } = this.size;
+    const { top, right, bottom, left } = this.insets;
+    // the free area (never smaller than half the screen, in case the UI covers nearly everything)
+    const vw = Math.max(W * 0.5, W - left - right);
+    const vh = Math.max(H * 0.5, H - top - bottom);
+    // scale: the shot's box fills the free area; the distance follows from the field of view
+    const ppm = Math.min(vh / (s.top - s.bottom), vw / (2 * s.halfWidth)); // CSS px per metre at her depth
+    const dist = H / (2 * ppm * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
+    const camY = f.y + s.camY;
+    // lens shift (no tilt): centre the box horizontally in the free area; spare height goes mostly
+    // below her (subtitles live there, e.g. on tall phone screens)
+    const boxY = H / 2 + (camY - (f.y + (s.top + s.bottom) / 2)) * ppm;
+    const boxH = (s.top - s.bottom) * ppm;
+    const freeX = Math.min(left, W - vw) + vw / 2;
+    const freeY = Math.min(top, H - vh) + Math.max(0, vh - boxH) * 0.3 + boxH / 2;
+    this.viewTarget = { dist, offX: W / 2 - freeX, offY: boxY - freeY, camY };
+    if (!this.smooth || !this.settled) Object.assign(this.view, this.viewTarget);
+    this.applyView();
+
+    // shadow map covers the framed body
+    const [half, up, down] = s.shadow;
+    const sc = this.key.shadow.camera;
+    sc.left = -half;
+    sc.right = half;
+    sc.top = up;
+    sc.bottom = down;
+    sc.updateProjectionMatrix();
+  }
+
+  /**
+   * Eases the camera toward the current framing; call once per frame. Framing changes (UI panels
+   * opening, camera option, window size) then glide instead of jumping.
+   */
+  update(dt: number) {
+    const v = this.view;
+    const t = this.viewTarget;
+    if (v.dist === t.dist && v.offX === t.offX && v.offY === t.offY && v.camY === t.camY) {
+      this.settled = true;
+      return;
+    }
+    const close = Math.abs(v.dist - t.dist) < 1e-4 && Math.abs(v.offX - t.offX) < 0.05 && Math.abs(v.offY - t.offY) < 0.05 && Math.abs(v.camY - t.camY) < 1e-5;
+    if (close || !this.settled) Object.assign(v, t);
+    else for (const k of ["dist", "offX", "offY", "camY"] as const) v[k] = damp(v[k], t[k], 0.12, dt);
+    this.settled = true;
+    this.applyView();
+  }
+
+  private applyView() {
+    const { width: W, height: H } = this.size;
+    const f = this.focus;
+    const v = this.view;
+    this.camera.position.set(f.x, v.camY, f.z + v.dist);
+    this.camera.lookAt(f.x, v.camY, f.z);
+    this.camera.setViewOffset(W, H, v.offX, v.offY, W, H);
     this.camera.updateMatrixWorld();
   }
 
   resize() {
-    const w = this.fixedSize?.width ?? this.container.clientWidth;
-    const h = this.fixedSize?.height ?? this.container.clientHeight;
+    const w = Math.max(1, this.fixedSize?.width ?? this.container.clientWidth);
+    const h = Math.max(1, this.fixedSize?.height ?? this.container.clientHeight);
+    const pr = this.fixedSize ? 1 : Math.min(window.devicePixelRatio, 2);
+    // resizing the canvas clears it, so only do it when something really changed (mobile
+    // browsers fire resize for many reasons, e.g. the on-screen keyboard)
+    if (this.sized && w === this.size.width && h === this.size.height && pr === this.renderer.getPixelRatio()) return;
+    this.sized = true;
+    this.size = { width: w, height: h };
+    if (!this.fixedSize) this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, !this.fixedSize);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();

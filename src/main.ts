@@ -4,7 +4,8 @@ import { ChatClient } from "./llm/ChatClient";
 import { VISEMES } from "./lipsync/visemes";
 import type { Framing } from "./scene/Stage";
 import { VOICES } from "./speech/TTSClient";
-import { MOODS, type Mood } from "./speech/text";
+import { MOODS, type Mood, phraseAround } from "./speech/text";
+import { narrowQuery, setupLayout } from "./ui/layout";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -32,6 +33,7 @@ async function runApp() {
       <small>Run <code>npm run setup</code> to build <code>public/avatar/avatar.glb</code>.</small>`;
     throw e;
   }
+  const layout = setupLayout(avatar);
   $("loading").classList.add("hidden");
   (window as unknown as { avatar: TalkingAvatar }).avatar = avatar;
 
@@ -47,7 +49,9 @@ async function runApp() {
     return ok;
   };
   void checkTts();
-  setInterval(checkTts, 8000);
+  // light polling (a rate-limited server counts these too); paused while the tab is hidden
+  setInterval(() => !document.hidden && void checkTts(), 30000);
+  document.addEventListener("visibilitychange", () => !document.hidden && void checkTts());
 
   const unlock = () => void avatar.resumeAudio();
   window.addEventListener("pointerdown", unlock);
@@ -61,8 +65,10 @@ async function runApp() {
       return;
     }
     sub.classList.add("show");
+    const [a, b] = phraseAround(words, wi, narrowQuery.matches ? 7 : 16);
     sub.replaceChildren(
-      ...words.map((w, i) => {
+      ...words.slice(a, b).map((w, j) => {
+        const i = a + j;
         const s = document.createElement("span");
         s.className = `w${i < wi ? " done" : i === wi ? " now" : ""}`;
         s.textContent = w;
@@ -89,6 +95,7 @@ async function runApp() {
   const speak = async () => {
     const text = textEl.value.trim();
     if (!text) return;
+    layout.blurInputs();
     await avatar.resumeAudio();
     avatar.stop();
     chatAbort?.abort();
@@ -157,7 +164,13 @@ async function runApp() {
   }
   stateButtons[0].classList.add("active");
   $<HTMLSelectElement>("gestures").addEventListener("change", (e) => avatar.setGestures((e.target as HTMLSelectElement).value as GestureLevel));
-  $<HTMLSelectElement>("framing").addEventListener("change", (e) => avatar.setFraming((e.target as HTMLSelectElement).value as Framing));
+  const framing = $<HTMLSelectElement>("framing");
+  framing.addEventListener("change", () => avatar.setFraming(framing.value as Framing));
+  const f0 = params.get("framing"); // ?framing=portrait opens on the close-up
+  if (f0 === "portrait" || f0 === "upper") {
+    framing.value = f0;
+    avatar.setFraming(f0);
+  }
 
   // ------------------------------------------------------------------ audio
   $<HTMLInputElement>("audio-file").addEventListener("change", async (e) => {
@@ -182,8 +195,7 @@ async function runApp() {
   });
   $<HTMLInputElement>("barge").addEventListener("change", (e) => (avatar.bargeIn = (e.target as HTMLInputElement).checked));
 
-  // ------------------------------------------------------------------ panel + debug
-  $("panel-toggle").addEventListener("click", () => $("panel").classList.toggle("collapsed"));
+  // ------------------------------------------------------------------ debug (panel/layout: ui/layout.ts)
   const bars = $("debug-bars");
   const fills: HTMLElement[] = [];
   for (const v of VISEMES) {
@@ -217,7 +229,8 @@ async function runCapture() {
   const avatar = new TalkingAvatar({ container: $("viewport"), capture: { width, height, fps } });
   await avatar.load();
   $("loading").classList.add("hidden");
-  if (params.get("framing") === "upper") avatar.setFraming("upper");
+  // verification videos and measurements use the close-up unless asked otherwise
+  avatar.setFraming(params.get("framing") === "upper" ? "upper" : "portrait");
   const canvas = avatar.stage.renderer.domElement;
   const errors: string[] = [];
   avatar.listeners.error = (e) => errors.push(e.message);

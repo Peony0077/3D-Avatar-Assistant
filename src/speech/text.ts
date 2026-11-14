@@ -209,3 +209,20 @@ function speakToken(tok: string): string | null {
   if ((m = /^#(\d+)$/.exec(core))) return wrap(`number ${m[1]}`);
   return null;
 }
+
+/**
+ * Subtitle phrase [start, end) containing word `wi`: at most `max` words, broken after commas
+ * etc. when possible, so long sentences don't cover the avatar.
+ */
+export function phraseAround(words: string[], wi: number, max: number): [number, number] {
+  let start = 0;
+  const at = Math.max(0, wi);
+  for (let i = 0; i < words.length; i++) {
+    const len = i - start + 1;
+    const end = i === words.length - 1 || len >= max || (len >= Math.ceil(max / 2) && /[,;:]$/.test(words[i]));
+    if (!end) continue;
+    if (at <= i) return [start, i + 1];
+    start = i + 1;
+  }
+  return [0, words.length];
+}

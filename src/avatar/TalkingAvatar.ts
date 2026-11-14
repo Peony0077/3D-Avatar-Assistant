@@ -8,7 +8,7 @@ import type { AvatarState } from "../behavior/types";
 import { AudioLipSync } from "../lipsync/AudioLipSync";
 import { type VisemeWeights, emptyWeights } from "../lipsync/LipSyncTrack";
 import { VISEMES } from "../lipsync/visemes";
-import { type Framing, Stage } from "../scene/Stage";
+import { type Framing, type Insets, Stage } from "../scene/Stage";
 import { MicListener } from "../speech/MicListener";
 import { SpeechPlayer, type Utterance } from "../speech/SpeechPlayer";
 import { SpeechQueue } from "../speech/SpeechQueue";
@@ -37,6 +37,9 @@ export interface AvatarListeners {
 }
 
 type ManualState = Exclude<AvatarState, "speaking">;
+
+/** Longest pause between sentences (waiting for TTS) that still looks like part of speaking (s). */
+const MAX_HOLD = 2.5;
 
 function wordIndexAt(u: Utterance, clipTime: number): number {
   const ms = clipTime * 1000;
@@ -89,6 +92,8 @@ export class TalkingAvatar {
   private visemes = emptyWeights();
   private silentWaiters: Array<() => void> = [];
   private running = false;
+  /** When the current between-sentence pause began (-1: not pausing). */
+  private holdSince = -1;
 
   constructor(private opts: TalkingAvatarOptions) {
     this.audioCtx = new AudioContext({ latencyHint: "interactive" });
@@ -104,10 +109,9 @@ export class TalkingAvatar {
     this.tts = new TTSClient(this.audioCtx, opts.ttsUrl ?? "/tts");
     this.player = new SpeechPlayer(this.audioCtx, this.speechClock, !opts.capture);
     this.speech = new SpeechQueue(this.tts, this.player, () => this.voice, () => this.lipIntensity);
-    this.speech.onError = (e) => {
-      this.waiting = false;
-      this.listeners.error?.(e);
-    };
+    // a failed sentence is skipped; the rest keeps playing (the frame loop ends "waiting" once
+    // nothing is pending)
+    this.speech.onError = (e) => this.listeners.error?.(e);
     this.mic = new MicListener(this.audioCtx);
     this.mic.onSpeechStart = () => {
       if (this.bargeIn && this.state === "speaking") this.stop();
@@ -199,6 +203,11 @@ export class TalkingAvatar {
     this.stage.setFraming(f);
   }
 
+  /** Screen area covered by your UI (CSS px from each edge); the avatar is framed in the rest. */
+  setViewInsets(insets: Insets) {
+    this.stage.setInsets(insets);
+  }
+
   async resumeAudio() {
     if (this.audioCtx.state === "suspended") await this.audioCtx.resume();
   }
@@ -256,6 +265,7 @@ export class TalkingAvatar {
     const now = this.behaviorClock.now();
     const dt = clamp(now - this.lastFrame, 0, 0.1);
     this.lastFrame = now;
+    this.stage.update(dt); // camera glides to framing changes (before gaze/head aim at it)
     const sNow = this.speechClock.now();
     this.player.prune(sNow);
     this.mic.update(dt);
@@ -266,8 +276,17 @@ export class TalkingAvatar {
     const scheduledAhead = this.player.busy(sNow);
     const audioDriven = !!this.audioLip?.active;
     let next: AvatarState;
+    const waitingForTts = this.waiting && this.speech.pending > 0;
+    const pausing = !cur && !scheduledAhead && !audioDriven && waitingForTts && this.state === "speaking";
+    if (!pausing) this.holdSince = -1;
     if (cur || scheduledAhead || audioDriven) next = "speaking";
-    else if (this.waiting && this.speech.pending > 0) next = "thinking";
+    else if (pausing) {
+      // between sentences, the next one is still being synthesised: pause as a speaker would (same
+      // posture, gaze and subtitle) instead of switching state, which visibly changes body, face
+      // and eyes at every sentence. Only a long wait turns into "thinking".
+      if (this.holdSince < 0) this.holdSince = now;
+      next = now - this.holdSince < MAX_HOLD ? "speaking" : "thinking";
+    } else if (waitingForTts) next = "thinking";
     else next = this.manual;
     if (!cur && !scheduledAhead && this.speech.pending === 0) this.waiting = false;
     if (next !== this.state) {
@@ -313,6 +332,7 @@ export class TalkingAvatar {
       for (const v of VISEMES) this.visemes[v] = Math.min(1, this.audioLip!.weights[v] * 1.15);
       this.head.speechLoud = this.audioLip!.loud;
     } else {
+      this.head.speechLoud = 0;
       for (const v of VISEMES) this.visemes[v] = damp(this.visemes[v], 0, 0.05, dt);
       if (this.lastWord !== -2 && this.state !== "speaking") {
         this.lastWord = -2;
