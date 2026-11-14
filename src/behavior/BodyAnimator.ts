@@ -95,15 +95,32 @@ function calmTorso(clip: THREE.AnimationClip, amp: number, posture: Map<string, 
   }
 }
 
+/** A playing clip's cross-fade: `level` moves toward `target` (0 or 1) at `rate` per second. */
+interface Fade {
+  name: string;
+  level: number;
+  target: number;
+  rate: number;
+}
+
+const ease = (x: number) => x * x * (3 - 2 * x);
+
 /**
  * Full-body motion from motion capture: breathing idles, listening posture, talking gestures.
  * Long clips are entered at random offsets and re-picked every few seconds so the motion never
  * visibly loops; all changes are cross-faded.
+ *
+ * Cross-fades are computed here rather than with three.js' crossFadeTo(): the clip weights and
+ * the anchor that fills the rest must add up to exactly 1 in every frame. With the mixer's own
+ * fades the anchor could only use last frame's weights, so on the first frame of a fade the total
+ * dropped (to 0.6 when leaving a 0.6-weight talk clip) and three.js blended the rest toward the
+ * bind pose: a one-frame "flash" of a different body pose at every clip change.
  */
 export class BodyAnimator {
   readonly mixer: THREE.AnimationMixer;
   gestures: GestureLevel = "full";
   private actions = new Map<string, THREE.AnimationAction>();
+  private fades = new Map<THREE.AnimationAction, Fade>();
   private current: THREE.AnimationAction | null = null;
   private currentName = "";
   private state: AvatarState = "idle";
@@ -173,11 +190,25 @@ export class BodyAnimator {
 
   private crossTo(next: THREE.AnimationAction, name: string, fade: number, startAt: number) {
     if (next === this.current) return;
-    next.reset();
-    next.time = startAt;
-    next.setEffectiveWeight(CLIP_WEIGHT[name] ?? 1);
-    next.play();
-    if (this.current) this.current.crossFadeTo(next, fade, false);
+    const rate = 1 / Math.max(fade, 1e-3);
+    for (const f of this.fades.values()) {
+      f.target = 0;
+      f.rate = rate;
+    }
+    const existing = this.fades.get(next);
+    // a looping clip that is still fading out fades back in from where it is, without restarting
+    // (no jump); one-shot clips (nods) always start from the beginning
+    if (!existing || next.loop === THREE.LoopOnce) {
+      next.reset();
+      next.time = startAt;
+      next.play();
+    }
+    if (existing) {
+      existing.target = 1;
+      existing.rate = rate;
+    } else {
+      this.fades.set(next, { name, level: fade > 0 ? 0 : 1, target: 1, rate });
+    }
     this.current = next;
     this.currentName = name;
   }
@@ -190,12 +221,21 @@ export class BodyAnimator {
     } else if (this.nodUntil < 0 && this.time >= this.segmentEnd) {
       this.playFrom(this.group(this.state), 1.2);
     }
-    // anchor fills whatever weight the active clips leave (so the pose never blends toward bind pose)
-    if (this.anchor) {
-      let used = 0;
-      for (const a of this.actions.values()) if (a !== this.anchor && a.isRunning()) used += a.getEffectiveWeight();
-      this.anchor.setEffectiveWeight(Math.max(0, 1 - used));
+    // this frame's weights: every fading clip, then the anchor fills the rest so the total is
+    // exactly 1 (below 1, three.js would blend toward the bind pose)
+    let used = 0;
+    for (const [a, f] of this.fades) {
+      f.level = f.target > f.level ? Math.min(f.target, f.level + f.rate * dt) : Math.max(f.target, f.level - f.rate * dt);
+      if (f.level <= 0 && f.target === 0) {
+        a.stop();
+        this.fades.delete(a);
+        continue;
+      }
+      const w = (CLIP_WEIGHT[f.name] ?? 1) * ease(f.level);
+      a.setEffectiveWeight(w);
+      used += w;
     }
+    this.anchor?.setEffectiveWeight(Math.max(0, 1 - used));
     this.mixer.update(dt);
   }
 }
