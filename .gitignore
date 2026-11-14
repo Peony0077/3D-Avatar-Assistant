@@ -6,3 +6,6 @@ server/voices/
 *.blend1
 .env
 .env.local
+
+# Cloudflare tunnel certificates and credentials must never be committed
+*.pem

@@ -1,0 +1,14 @@
+# systemd user unit (installed by deploy/cloudflare-tunnel.sh; @...@ placeholders are filled in there).
+[Unit]
+Description=3D Avatar Assistant - Cloudflare Tunnel for @HOSTNAME@
+After=3d-avatar-web.service
+
+[Service]
+Type=notify
+ExecStart=@CLOUDFLARED@ --no-autoupdate tunnel --config @CONFIG@ run
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

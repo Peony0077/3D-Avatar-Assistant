@@ -1,0 +1,8 @@
+# cloudflared config template, filled in by deploy/cloudflare-tunnel.sh (written to ~/.cloudflared/).
+tunnel: @TUNNEL_ID@
+credentials-file: @CREDENTIALS@
+no-autoupdate: true
+ingress:
+  - hostname: @HOSTNAME@
+    service: @ORIGIN@
+  - service: http_status:404

@@ -1,25 +1,22 @@
-# Production entry point for https://3d-avatar.novaeuropa.space (Caddy, automatic HTTPS).
+# Production entry point for https://3d-avatar.novaeuropa.space behind a Cloudflare Tunnel.
 #
-# Caddy runs as an unprivileged user service inside WSL2, which may not bind ports below 1024,
-# so it listens on 8080/8443. Windows forwards the public ports to them (deploy/windows/):
-#     internet :80  -> router -> Windows :80  -> WSL :8080   (ACME HTTP-01 + redirect to HTTPS)
-#     internet :443 -> router -> Windows :443 -> WSL :8443   (the site)
-# Caddy assumes the public ports are 80/443, so certificates and redirects work unchanged.
+#   browser --HTTPS--> Cloudflare --tunnel, opened outbound from this machine--> cloudflared
+#           --> Caddy http://127.0.0.1:8081 (this file) --> static site + /tts proxy
+#
+# Cloudflare terminates HTTPS, so Caddy serves plain HTTP on loopback only: no public port is
+# open and no port forwarding is needed. For direct hosting with Caddy's own certificates
+# (ports 80/443 forwarded to this machine), run Caddy with Caddyfile.direct instead.
 # Environment (set by the systemd unit): SITE_ROOT, LOG_DIR.
 {
-	http_port 8080
-	https_port 8443
-
 	servers {
-		# Windows' port forwarding is TCP-only; advertising HTTP/3 (UDP) would make browsers
-		# try a path that can't connect.
-		protocols h1 h2
+		# Requests arrive from cloudflared on loopback; take the visitor's address from
+		# Cloudflare's header so logs show real clients.
+		trusted_proxies static 127.0.0.1/32 ::1/128
+		client_ip_headers Cf-Connecting-Ip X-Forwarded-For
 	}
-
-	# Optional: ACME account contact (Let's Encrypt no longer sends expiry mail; not required).
-	# email you@example.com
 }
 
-3d-avatar.novaeuropa.space {
+http://:8081 {
+	bind 127.0.0.1
 	import site.caddy
 }
