@@ -17,7 +17,8 @@ neural voice (Kokoro via HeadTTS). Everything is free and open source; see [Lice
   - **Head:** nods on stressed words and a slight tilt on questions. The head keeps facing you while the
     body moves.
   - **Face:** eyebrow raises on stressed words, mood expressions, and small idle movements.
-  - **Body:** breathing and talking or listening motion capture.
+  - **Body:** breathing and talking or listening motion capture. Every clip shares one calm posture,
+    and torso sway is reduced so she stays facing the viewer; arm gestures are kept.
 - **Responsive**:
   - **Pipelined speech:** the next sentence is synthesised while the current one plays, and replies from a
     streaming LLM start speaking at their first sentence.
@@ -49,7 +50,7 @@ Optional assistant replies: set `VITE_LLM_MODEL` (and `LLM_BASE_URL`) in `.env` 
 OpenAI-compatible endpoint, for example a local `ollama serve`. "Ask assistant" then streams the reply
 sentence by sentence into speech. See `.env.example`.
 
-Production hosting (Caddy, systemd user services): see [deploy/README.md](deploy/README.md).
+Production hosting (Cloudflare Tunnel, Caddy, systemd user services): see [deploy/README.md](deploy/README.md).
 
 ## Using it from your assistant
 
@@ -107,7 +108,13 @@ npm test                                   # 23 unit tests (lip-sync engine on r
 node tools/smoke-test.mjs                  # headless Chromium: load, speak, subtitles, stop, audio-file lip sync
 node tools/capture-video.mjs --text "…" --out demo.mp4   # frame-exact video of the real runtime + soundtrack
 <blender-python> tools/analyze-sync.py .work/capture-frames   # mouth vs audio offset, closures (needs numpy)
+node tools/measure-motion.mjs --variants full,nohead,nobody   # head/body sway, bobbing and tremble per state
 ```
+
+`measure-motion.mjs` steps the runtime at 60 fps and reports how far the head, chest and eyes (on
+screen) move while idle, listening and speaking. It splits that movement into slow sway, 0.7–4 Hz
+bobbing and tremble above 4 Hz. Last measurement while speaking: head travel 12 mm side to side
+and 10 mm forward/back, eyes within 28 px on a 720 px frame, tremble under 0.3 px.
 
 The smoke test and capture need `npm run tts` and `npm run dev` running. `capture-video.mjs` renders the
 browser runtime on a virtual clock, so the video shows exactly what users see. Last measurement on

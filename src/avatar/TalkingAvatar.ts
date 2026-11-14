@@ -140,6 +140,7 @@ export class TalkingAvatar {
       .add(this.model.bones.rightEye.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
     this.stage.setFocus(eyes);
     this.gaze.attention.copy(this.stage.camera.position);
+    this.gaze.headAttention.copy(this.stage.camera.position);
     await this.stage.renderer.compileAsync(this.stage.scene, this.stage.camera);
     this.lastFrame = this.behaviorClock.now();
     if (!this.opts.capture) this.start();
@@ -286,7 +287,7 @@ export class TalkingAvatar {
       if (u.id !== this.currentU) this.onUtteranceStart(u, now, false);
       for (const e of u.emphasis) {
         if (this.lastClip < e && clipTime >= e) {
-          this.head.nod(rand(0.7, 1.1));
+          this.head.nod(rand(0.6, 0.9));
           if (chance(0.5)) this.expr.browFlash(now, rand(0.22, 0.38));
         }
       }
@@ -298,7 +299,7 @@ export class TalkingAvatar {
           this.head.questionTilt();
           this.expr.browFlash(now, 0.3);
         }
-        if (!u.isQuestion && this.lastClip < lastEnd - 0.1 && clipTime >= lastEnd - 0.1) this.head.nod(0.45);
+        if (!u.isQuestion && this.lastClip < lastEnd - 0.1 && clipTime >= lastEnd - 0.1) this.head.nod(0.4);
       }
       const wi = wordIndexAt(u, clipTime);
       if (wi !== this.lastWord) {
@@ -336,8 +337,9 @@ export class TalkingAvatar {
     this.speakingAmt = damp(this.speakingAmt, this.state === "speaking" ? 1 : 0, 0.15, dt);
 
     // ------------------------------------------------------------------ body, head, eyes, face
+    this.head.restore();
     this.body.update(dt);
-    this.head.update(now, dt, this.gaze.attention);
+    this.head.update(now, dt, this.stage.camera.position, this.gaze.headAttention);
     this.gaze.update(now, dt, this.face.layer("gaze"));
     this.blink.update(now, this.face.layer("blink"));
     this.expr.update(now, dt, this.face.layer("expression"));

@@ -24,11 +24,76 @@ const ANCHOR = "idle_breathe_01";
 /** How much of each clip's motion is used (the rest comes from the anchor). Measured head travel:
  *  talk_neutral_01 ~2 cm, talk_neutral_02 / talk_relaxed_01 ~10 cm with large torso turns. */
 const CLIP_WEIGHT: Record<string, number> = {
-  talk_neutral_02: 0.5,
-  talk_relaxed_01: 0.5,
-  idle_neutral_02: 0.7,
-  listen_neutral_01: 0.75,
+  talk_neutral_02: 0.6,
+  talk_relaxed_01: 0.6,
+  idle_neutral_02: 0.75,
+  listen_neutral_01: 0.8,
 };
+
+/** Bones whose mocap sway is reduced; arms and hands keep their gestures. */
+const TORSO = new Set(["Bip01_Pelvis", "Bip01_Spine", "Bip01_Spine1", "Bip01_Spine2", "Bip01_Neck", "Bip01_Head"]);
+/** Share of each clip's torso/head movement that is kept. The actors were talking to people
+ *  around them (rocking, turning, leaning in); an assistant addressing the camera needs far less. */
+const TORSO_AMP: Record<string, number> = {
+  talk_neutral_01: 0.55,
+  talk_neutral_02: 0.3,
+  talk_relaxed_01: 0.3,
+  listen_neutral_01: 0.45,
+  idle_neutral_02: 0.5,
+};
+const DEFAULT_TORSO_AMP = 0.8;
+
+/** Hemisphere-aligns a quaternion track's keys in place (so they can be averaged); returns the mean. */
+function alignedMean(v: ArrayLike<number> & { [i: number]: number }, out: THREE.Quaternion) {
+  const n = v.length / 4;
+  for (let i = 1; i < n; i++) {
+    const d = v[i * 4] * v[i * 4 - 4] + v[i * 4 + 1] * v[i * 4 - 3] + v[i * 4 + 2] * v[i * 4 - 2] + v[i * 4 + 3] * v[i * 4 - 1];
+    if (d < 0) for (let k = 0; k < 4; k++) v[i * 4 + k] = -v[i * 4 + k];
+  }
+  const sum = [0, 0, 0, 0];
+  for (let i = 0; i < v.length; i++) sum[i % 4] += v[i];
+  return out.set(sum[0], sum[1], sum[2], sum[3]).normalize();
+}
+
+/** Torso rotation tracks with at least `minKeys` keys (a constant track may hold a single key). */
+const torsoTracks = (clip: THREE.AnimationClip, minKeys = 3) =>
+  clip.tracks.filter((t) => {
+    const dot = t.name.lastIndexOf(".");
+    return t.name.slice(dot + 1) === "quaternion" && TORSO.has(t.name.slice(0, dot)) && t.values.length >= minKeys * 4;
+  });
+
+/**
+ * Calms a clip's torso. Each torso rotation track is smoothed (5-key moving average: removes
+ * tremble above ~4 Hz at 30 keys/s), its movement around the clip's average is scaled by `amp`,
+ * and that average is replaced by one shared `posture`, so cross-fading between clips never makes
+ * the upper body lean or drift.
+ */
+function calmTorso(clip: THREE.AnimationClip, amp: number, posture: Map<string, THREE.Quaternion>) {
+  const mean = new THREE.Quaternion();
+  const meanInv = new THREE.Quaternion();
+  const q = new THREE.Quaternion();
+  const ident = new THREE.Quaternion();
+  for (const track of torsoTracks(clip)) {
+    const v = track.values;
+    const n = v.length / 4;
+    alignedMean(v, mean);
+    meanInv.copy(mean).invert();
+    const base = posture.get(track.name) ?? mean;
+    const src = Float32Array.from(v);
+    for (let i = 0; i < n; i++) {
+      const acc = [0, 0, 0, 0];
+      for (let j = Math.max(0, i - 2); j <= Math.min(n - 1, i + 2); j++) for (let k = 0; k < 4; k++) acc[k] += src[j * 4 + k];
+      q.set(acc[0], acc[1], acc[2], acc[3]).normalize();
+      // q = mean * dev  ->  base * (dev scaled by amp)
+      q.premultiply(meanInv);
+      q.copy(ident.clone().slerp(q, amp)).premultiply(base);
+      v[i * 4] = q.x;
+      v[i * 4 + 1] = q.y;
+      v[i * 4 + 2] = q.z;
+      v[i * 4 + 3] = q.w;
+    }
+  }
+}
 
 /**
  * Full-body motion from motion capture: breathing idles, listening posture, talking gestures.
@@ -50,7 +115,12 @@ export class BodyAnimator {
 
   constructor(model: AvatarModel) {
     this.mixer = new THREE.AnimationMixer(model.root);
+    // the calm breathing clip's average torso posture is shared by every clip
+    const posture = new Map<string, THREE.Quaternion>();
+    const anchorClip = model.clips.find((c) => c.name === ANCHOR);
+    if (anchorClip) for (const t of torsoTracks(anchorClip, 1)) posture.set(t.name, alignedMean(t.values, new THREE.Quaternion()));
     for (const clip of model.clips) {
+      calmTorso(clip, TORSO_AMP[clip.name] ?? DEFAULT_TORSO_AMP, posture);
       const a = this.mixer.clipAction(clip);
       a.setLoop(THREE.LoopRepeat, Infinity);
       this.actions.set(clip.name, a);

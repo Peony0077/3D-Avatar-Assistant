@@ -31,6 +31,9 @@ export class GazeController {
   state: AvatarState = "idle";
   /** World point the avatar is attending to (head follows this partially). */
   readonly attention = new THREE.Vector3();
+  /** Where the head should point: the viewer during eye contact (the eyes alone make the small
+   *  eye/mouth fixation shifts), the glance target while looking away. */
+  readonly headAttention = new THREE.Vector3();
   private mode: Mode = "contact";
   private modeUntil = 0;
   private fixation = 0;
@@ -119,6 +122,7 @@ export class GazeController {
     if (this.mode === "contact") {
       const fix = FIXATIONS[this.fixation].clone().applyQuaternion(this.camera.quaternion);
       this.attention.copy(this.camera.position).add(fix);
+      this.headAttention.copy(this.camera.position);
     } else {
       // direction in the avatar's (root) frame -> world point 1.5 m away
       const d = new THREE.Vector3(Math.sin(this.avertDir.x) * Math.cos(this.avertDir.y), Math.sin(this.avertDir.y),
@@ -127,6 +131,7 @@ export class GazeController {
       const baseYaw = Math.atan2(toCam.x, toCam.z);
       d.applyAxisAngle(Y, baseYaw);
       this.attention.copy(this.eyeCenter).addScaledVector(d, 1.5);
+      this.headAttention.copy(this.attention);
     }
 
     // ----------------------------------------------- target direction relative to the head

@@ -38,8 +38,9 @@ export function findEmphasis(timing: TTSTiming, loud: LoudnessEnvelope): number[
   const picks: number[] = [];
   for (const c of [...scored].sort((a, b) => b.s - a.s)) {
     if (c.s < 0.75) break;
-    if (picks.every((p) => Math.abs(p - c.t) > 0.7)) picks.push(c.t);
-    if (picks.length >= Math.max(1, Math.round(scored.length / 4))) break;
+    // sparse: a nod on every few words reads as bobbing, not emphasis
+    if (picks.every((p) => Math.abs(p - c.t) > 1.4)) picks.push(c.t);
+    if (picks.length >= Math.max(1, Math.round(scored.length / 6))) break;
   }
   return picks.sort((a, b) => a - b);
 }

@@ -224,6 +224,8 @@ async function runCapture() {
   const api = {
     ready: true,
     errors,
+    /** The runtime itself, for measurement tools (tools/measure-motion.mjs). */
+    avatar,
     voice: (v: string, speed = 1) => Object.assign(avatar.voice, { voice: v, speed }),
     mood: (m: Mood) => avatar.setMood(m),
     state: (s: "idle" | "listening" | "thinking") => avatar.setState(s),
